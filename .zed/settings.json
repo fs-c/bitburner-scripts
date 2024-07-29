@@ -1,0 +1,15 @@
+{
+    "tab_size": 4,
+    "wrap_guides": [100],
+    "inline_completion_provider": "supermaven",
+    "languages": {
+        "JavaScript": {
+            "format_on_save": {
+                "external": {
+                    "command": "prettier",
+                    "arguments": ["--stdin-filepath", "{buffer_path}"]
+                }
+            }
+        }
+    }
+}
