@@ -5,10 +5,20 @@ export interface DispatchableTask extends Task {
     threads: number;
 }
 
+interface StartedTask {
+    server: string;
+    ramCost: number;
+    pid: number;
+}
+
+/**
+ * this class dispatches tasks to appropriately sized servers
+ * ALL script executions must be done through this class
+ */
 export class TaskDispatcher {
     private readonly blocks: { server: string; ram: number }[] = [];
 
-    private readonly startedTasks: Map<string, { server: string; ramCost: number }> = new Map();
+    private readonly startedTasks = new Map<string, StartedTask>();
 
     constructor(private readonly ns: NS) {
         const servers = getAllServers(this.ns);
@@ -38,13 +48,19 @@ export class TaskDispatcher {
         }
 
         this.sortBlocks();
-
-        this.ns.print(JSON.stringify(this.blocks, null, 4));
     }
 
+    /**
+     * reserves resources for a task and executes it
+     * MUST call finish() on all started tasks, otherwise memory will leak
+     */
     public start(task: DispatchableTask, callbackPort: number, { dryRun = false } = {}): void {
         if (this.startedTasks.has(task.id)) {
             throw new Error(`task ${task.id} is already started`);
+        }
+
+        if (task.threads <= 0) {
+            throw new Error(`task ${task.id} has invalid thread count ${task.threads}`);
         }
 
         const taskScript = TASK_SCRIPTS.get(task.taskType);
@@ -55,38 +71,46 @@ export class TaskDispatcher {
         // depend on the task being run with exactly as many threads per script as requested
         const block = this.blocks.find((block) => block.ram >= taskRamCost);
         if (!block) {
+            this.ns.print(`current resource availability`);
+            this.ns.print(JSON.stringify(this.blocks, null, 4));
+
             throw new Error(`couldn't find block for task ${JSON.stringify(task)}`);
         }
 
-        if (!dryRun) {
-            const pid = this.ns.exec(
-                taskScript.path,
-                block.server,
-                task.threads,
-                task.id,
-                task.taskType,
-                task.target,
-                task.delayMs,
-                callbackPort,
-            );
-            if (pid === 0) {
-                throw new Error(`failed to start task ${task.id}`);
-            }
+        const pid = dryRun
+            ? null
+            : this.ns.exec(
+                  taskScript.path,
+                  block.server,
+                  task.threads,
+                  task.id,
+                  task.taskType,
+                  task.target,
+                  task.delayMs,
+                  callbackPort,
+              );
 
-            this.ns.print(
-                `started task ${task.id} on ${block.server} with ${task.threads} threads (pid ${pid})`,
-            );
+        if (pid === 0) {
+            throw new Error(`failed to start task ${task.id}`);
         }
+
+        this.ns.print(
+            `started task ${task.id} on ${block.server} with ${task.threads} threads (pid ${pid})${dryRun ? ' (dry run)' : ''}'}`,
+        );
 
         block.ram -= taskRamCost;
 
-        this.startedTasks.set(task.id, { ramCost: taskRamCost, server: block.server });
+        this.startedTasks.set(task.id, { ramCost: taskRamCost, server: block.server, pid });
 
         // todo-performance: this might be a bit slow, faster would be to just insert the block
         //   at the right place
         this.sortBlocks();
     }
 
+    /**
+     * frees the resources allocated for a started task and kills the backing process if
+     * it's still running
+     */
     public finish(taskId: string): void {
         const startedTask = this.startedTasks.get(taskId);
         if (!startedTask) {
@@ -100,26 +124,11 @@ export class TaskDispatcher {
 
         block.ram += startedTask.ramCost;
 
+        // usually this is called when we know the process is already dead, but just in case
+        this.ns.kill(startedTask.pid);
+
         // todo-performance: see above
         this.sortBlocks();
-    }
-
-    public canStartAll(taskShells: Omit<DispatchableTask, 'id'>[]): boolean {
-        let canStartAll = true;
-
-        for (const shell of taskShells) {
-            const task = { ...shell, id: id() };
-
-            try {
-                this.start(task, 0, { dryRun: true });
-            } catch (err) {
-                canStartAll = false;
-            } finally {
-                this.finish(task.id);
-            }
-        }
-
-        return canStartAll;
     }
 
     private sortBlocks(): void {

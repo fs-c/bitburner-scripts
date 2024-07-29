@@ -1,121 +1,27 @@
-import { getAllServers, id, isPrepped } from './utils.js';
+import { id, isPrepped } from './utils.js';
 import { TASK_SCRIPTS, Task, TaskType, isTaskResult } from './tasks/task.js';
-import { DispatchableTask, TaskDispatcher } from './task-dispatcher.js';
+import { TaskDispatcher } from './task-dispatcher.js';
+import { calculateProtoBatch, createBatchFromProtoBatch } from './batches/batch.js';
+import { BatchFactory } from './batches/batch-factory.js';
 
-function calculateBatchTaskShells(
-    ns: NS,
-    target: string,
-    relativeMoneyToSteal: number,
-    spacerMs: number,
-): Omit<DispatchableTask, 'id'>[] {
-    // assuming that the server is at max money and min security (= prepped), we want to calculate
-    // the relative timing and required thread count for the following tasks such that at the end
-    // of the batch the server is prepped again
-    // the illustration is adapted from the game documentation and not to scale
-    //
-    //                    |= hack ====================|               (1)
-    //   |= weaken ======================================|            (2)
-    //                 |= grow =============================|         (3)
-    //         |= weaken ======================================|      (4)
-    //
-    //   0-------------- time ------------------------|--|----->
-    //                                                |-> spacerMs
-
-    if (relativeMoneyToSteal <= 0 || relativeMoneyToSteal > 1) {
-        throw new Error('relativeMoneyToSteal must be in (0, 1]');
-    }
-
-    if (spacerMs <= 0) {
-        throw new Error('spacer must be positive');
-    }
-
-    const server = ns.getServer(target);
-
-    const hackTime = ns.getHackTime(target);
-    // perhaps a pointless optimization, but otherwise the hack time would be computed three times
-    // for no reason (internally in getGrowTime and getWeakenTime)
-    const growTime = hackTime * 3.2; // ns.getGrowTime(target)
-    const weakenTime = hackTime * 4; // ns.getWeakenTime(target)
-
-    const moneyToSteal = server.moneyMax * relativeMoneyToSteal;
-    const serverMoneyAfterHack = server.moneyMax - moneyToSteal;
-
-    // note that we floor hack threads but ceil other threads, we want to keep the server prepped
-
-    // (1)
-    const hackThreads = Math.floor(ns.hackAnalyzeThreads(target, moneyToSteal));
-    const relativeHackEndTime = 0;
-    const relativeHackStartTime = relativeHackEndTime - hackTime;
-
-    // (2)
-    // security increase from the hack threads / security decrease from a single weaken thread
-    //   = weaken threads
-    // this works because weaken is linear in the number of threads
-    const weakenHackThreads = Math.ceil(ns.hackAnalyzeSecurity(hackThreads) / ns.weakenAnalyze(1));
-    const relativeWeakenHackEndTime = relativeHackEndTime + spacerMs;
-    const relativeWeakenHackStartTime = relativeWeakenHackEndTime - weakenTime;
-
-    // (3)
-    const growThreads = Math.ceil(ns.growthAnalyze(target, server.moneyMax / serverMoneyAfterHack));
-    const relativeGrowEndTime = relativeWeakenHackEndTime + spacerMs;
-    const relativeGrowStartTime = relativeGrowEndTime - growTime;
-
-    // (4)
-    // again, this works because weaken is linear in the number of threads
-    const weakenGrowThreads = Math.ceil(
-        ns.growthAnalyzeSecurity(growThreads) / ns.weakenAnalyze(1),
-    );
-    const relativeWeakenGrowEndTime = relativeGrowEndTime + spacerMs;
-    const relativeWeakenGrowStartTime = relativeWeakenGrowEndTime - weakenTime;
-
-    const earliestRelativeStartTime = Math.min(
-        relativeHackStartTime,
-        relativeWeakenHackStartTime,
-        relativeGrowStartTime,
-        relativeWeakenGrowStartTime,
-    );
-
-    // normalize to make the earliest start time 0
-    const hackStartTime = relativeHackStartTime - earliestRelativeStartTime;
-    const weakenHackStartTime = relativeWeakenHackStartTime - earliestRelativeStartTime;
-    const growStartTime = relativeGrowStartTime - earliestRelativeStartTime;
-    const weakenGrowStartTime = relativeWeakenGrowStartTime - earliestRelativeStartTime;
-
-    return [
-        {
-            taskType: TaskType.Hack,
-            target,
-            delayMs: hackStartTime,
-            threads: hackThreads,
-        },
-        {
-            taskType: TaskType.WeakenHack,
-            target,
-            delayMs: weakenHackStartTime,
-            threads: weakenHackThreads,
-        },
-        {
-            taskType: TaskType.Grow,
-            target,
-            delayMs: growStartTime,
-            threads: growThreads,
-        },
-        {
-            taskType: TaskType.WeakenGrow,
-            target,
-            delayMs: weakenGrowStartTime,
-            threads: weakenGrowThreads,
-        },
-    ];
+function getDepth(ns: NS, target: string, spacerMs: number): number {
+    const weakenTime = ns.getWeakenTime(target);
+    return Math.floor(weakenTime / (4 * spacerMs));
 }
 
 export async function main(ns: NS): Promise<void> {
+    // todo: this function is a mess, i am also not sure if BatchFactory is a good concept
+
     const host = 'home';
     const [target] = ns.args as [string];
 
+    if (!isPrepped(ns, target)) {
+        throw new Error('server is not prepped');
+    }
+
     const spacerMs = 50;
 
-    const batchTaskShells = calculateBatchTaskShells(ns, target, 0.8, spacerMs);
+    const batchFactory = new BatchFactory(ns, target, 0.5, spacerMs);
     const taskDispatcher = new TaskDispatcher(ns);
 
     const callbackPortNumber = ns.pid;
@@ -123,15 +29,22 @@ export async function main(ns: NS): Promise<void> {
 
     const startedTasks = new Map<string, Task>();
 
-    // seed the system with some initial batches
-    // todo: this just uses a random constant for now
-    for (let i = 0; i < 100; i++) {
-        const additionalDelayMs = i * spacerMs;
+    ns.atExit(() => {
+        for (const [taskId] of startedTasks) {
+            taskDispatcher.finish(taskId);
+        }
+    });
 
-        // todo: factor batch creation out
-        for (const shell of batchTaskShells) {
-            const task = { ...shell, id: id(), delayMs: shell.delayMs + additionalDelayMs };
+    const depth = getDepth(ns, target, spacerMs) / 2;
+    ns.tprint(`depth ${depth}`);
 
+    for (let i = 0; i < depth; i++) {
+        // the last task finishes after (tasks.length - 1) * spacer but we also want there to be
+        // a spacer between batches
+        const additionalDelayMs = i * spacerMs * 4;
+        const batch = batchFactory.createBatch(additionalDelayMs);
+
+        for (const task of batch.tasks) {
             taskDispatcher.start(task, callbackPortNumber);
             startedTasks.set(task.id, task);
         }
@@ -164,9 +77,8 @@ export async function main(ns: NS): Promise<void> {
                     ns.print('WARN server is not prepped after batch');
                 }
 
-                for (const shell of batchTaskShells) {
-                    const task = { ...shell, id: id(), delayMs: shell.delayMs + spacerMs };
-
+                const newBatch = batchFactory.createBatch(spacerMs * 4);
+                for (const task of newBatch.tasks) {
                     taskDispatcher.start(task, callbackPortNumber);
                     startedTasks.set(task.id, task);
                 }
