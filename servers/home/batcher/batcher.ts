@@ -1,7 +1,6 @@
 import { id, isPrepped } from './utils.js';
 import { TASK_SCRIPTS, Task, TaskType, isTaskResult } from './tasks/task.js';
 import { TaskDispatcher } from './task-dispatcher.js';
-import { calculateProtoBatch, createBatchFromProtoBatch } from './batches/batch.js';
 import { BatchFactory } from './batches/batch-factory.js';
 
 function getDepth(ns: NS, target: string, spacerMs: number): number {
