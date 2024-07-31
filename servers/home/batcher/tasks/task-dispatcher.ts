@@ -1,29 +1,30 @@
-import { getAllServers, id } from './utils.js';
-import { TASK_SCRIPTS, Task } from './tasks/task.js';
+import { getAllServers } from '../utils.js';
+import { TASK_SCRIPTS, Task } from './task.js';
 
 export interface DispatchableTask extends Task {
     threads: number;
 }
 
-interface StartedTask {
+interface DispatchedTask extends DispatchableTask {
     server: string;
     ramCost: number;
-    pid: number;
+    // undefined if this DispatchedTask is the result of a dry run and was not actually
+    // executed anywhere (todo: this is not great)
+    pid: number | undefined;
 }
 
 /**
- * this class dispatches tasks to appropriately sized servers
- * ALL script executions must be done through this class
+ * this class assumes that ALL script executions happen through it
  */
 export class TaskDispatcher {
     private readonly blocks: { server: string; ram: number }[] = [];
 
-    private readonly startedTasks = new Map<string, StartedTask>();
+    private readonly dispatchedTasks = new Map<string, DispatchedTask>();
 
     constructor(private readonly ns: NS) {
         const servers = getAllServers(this.ns);
 
-        const taskScriptPaths = [...TASK_SCRIPTS.values()].map(({ path: script }) => script);
+        const taskScriptPaths = Object.values(TASK_SCRIPTS).map((taskScript) => taskScript.path);
 
         for (const server of servers) {
             const availableRam = this.ns.getServerMaxRam(server) - this.ns.getServerUsedRam(server);
@@ -54,8 +55,8 @@ export class TaskDispatcher {
      * reserves resources for a task and executes it
      * MUST call finish() on all started tasks, otherwise memory will leak
      */
-    public start(task: DispatchableTask, callbackPort: number, { dryRun = false } = {}): void {
-        if (this.startedTasks.has(task.id)) {
+    public dispatch(task: DispatchableTask, callbackPort: number, { dryRun = false } = {}): void {
+        if (this.dispatchedTasks.has(task.id)) {
             throw new Error(`task ${task.id} is already started`);
         }
 
@@ -63,12 +64,12 @@ export class TaskDispatcher {
             throw new Error(`task ${task.id} has invalid thread count ${task.threads}`);
         }
 
-        const taskScript = TASK_SCRIPTS.get(task.taskType);
+        const taskScript = TASK_SCRIPTS[task.taskType];
         const taskRamCost = task.threads * taskScript.cost;
 
         // we assume that blocks is sorted so this will find the smallest block that fits the task
-        // we don't split a task across multiple blocks for simplicity and because some timing calculations
-        // depend on the task being run with exactly as many threads per script as requested
+        // we don't split a task across multiple blocks for simplicity and because some timing
+        // calculations depend on being run with exactly as many threads as requested
         const block = this.blocks.find((block) => block.ram >= taskRamCost);
         if (!block) {
             this.ns.print(`current resource availability`);
@@ -78,7 +79,7 @@ export class TaskDispatcher {
         }
 
         const pid = dryRun
-            ? null
+            ? undefined
             : this.ns.exec(
                   taskScript.path,
                   block.server,
@@ -100,35 +101,53 @@ export class TaskDispatcher {
 
         block.ram -= taskRamCost;
 
-        this.startedTasks.set(task.id, { ramCost: taskRamCost, server: block.server, pid });
+        this.dispatchedTasks.set(task.id, {
+            ...task,
+            ramCost: taskRamCost,
+            server: block.server,
+            pid,
+        });
 
         // todo-performance: this might be a bit slow, faster would be to just insert the block
         //   at the right place
         this.sortBlocks();
     }
 
-    /**
-     * frees the resources allocated for a started task and kills the backing process if
-     * it's still running
-     */
-    public finish(taskId: string): void {
-        const startedTask = this.startedTasks.get(taskId);
-        if (!startedTask) {
-            throw new Error(`task ${taskId} has not been started`);
+    public free(dispatchedTaskId: string): void {
+        const dispatchedTask = this.dispatchedTasks.get(dispatchedTaskId);
+        if (!dispatchedTask) {
+            throw new Error(`task ${dispatchedTaskId} has not been started`);
         }
 
-        const block = this.blocks.find((block) => block.server === startedTask.server);
+        const block = this.blocks.find((block) => block.server === dispatchedTask.server);
         if (!block) {
-            throw new Error(`couldn't find block for started task ${startedTask}`);
+            throw new Error(`couldn't find block for started task ${dispatchedTask}`);
         }
 
-        block.ram += startedTask.ramCost;
+        block.ram += dispatchedTask.ramCost;
 
-        // usually this is called when we know the process is already dead, but just in case
-        this.ns.kill(startedTask.pid);
+        if (dispatchedTask.pid != null) {
+            this.ns.kill(dispatchedTask.pid);
+        }
+
+        this.dispatchedTasks.delete(dispatchedTaskId);
 
         // todo-performance: see above
         this.sortBlocks();
+    }
+
+    public freeAndKillAll(): void {
+        for (const [taskId, dispatchedTask] of this.dispatchedTasks) {
+            this.free(taskId);
+
+            if (dispatchedTask.pid != null) {
+                this.ns.kill(dispatchedTask.pid);
+            }
+        }
+    }
+
+    public getDispatchedTask(taskId: string): DispatchedTask | undefined {
+        return this.dispatchedTasks.get(taskId);
     }
 
     private sortBlocks(): void {

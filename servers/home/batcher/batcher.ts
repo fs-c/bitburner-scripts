@@ -1,6 +1,6 @@
-import { id, isPrepped } from './utils.js';
-import { TASK_SCRIPTS, Task, TaskType, isTaskResult } from './tasks/task.js';
-import { TaskDispatcher } from './task-dispatcher.js';
+import { isPrepped } from './utils.js';
+import { TaskType, isTaskResult } from './tasks/task.js';
+import { TaskDispatcher } from './tasks/task-dispatcher.js';
 import { BatchFactory } from './batches/batch-factory.js';
 
 function getDepth(ns: NS, target: string, spacerMs: number): number {
@@ -11,7 +11,6 @@ function getDepth(ns: NS, target: string, spacerMs: number): number {
 export async function main(ns: NS): Promise<void> {
     // todo: this function is a mess, i am also not sure if BatchFactory is a good concept
 
-    const host = 'home';
     const [target] = ns.args as [string];
 
     if (!isPrepped(ns, target)) {
@@ -20,21 +19,17 @@ export async function main(ns: NS): Promise<void> {
 
     const spacerMs = 50;
 
-    const batchFactory = new BatchFactory(ns, target, 0.5, spacerMs);
+    const batchFactory = new BatchFactory(ns, target, 0.8, spacerMs);
     const taskDispatcher = new TaskDispatcher(ns);
 
     const callbackPortNumber = ns.pid;
     const callbackPort = ns.getPortHandle(callbackPortNumber);
 
-    const startedTasks = new Map<string, Task>();
-
     ns.atExit(() => {
-        for (const [taskId] of startedTasks) {
-            taskDispatcher.finish(taskId);
-        }
+        taskDispatcher.freeAndKillAll();
     });
 
-    const depth = getDepth(ns, target, spacerMs) / 2;
+    const depth = getDepth(ns, target, spacerMs) / 5;
     ns.tprint(`depth ${depth}`);
 
     for (let i = 0; i < depth; i++) {
@@ -44,26 +39,25 @@ export async function main(ns: NS): Promise<void> {
         const batch = batchFactory.createBatch(additionalDelayMs);
 
         for (const task of batch.tasks) {
-            taskDispatcher.start(task, callbackPortNumber);
-            startedTasks.set(task.id, task);
+            taskDispatcher.dispatch(task, callbackPortNumber);
         }
     }
 
     while (true) {
-        // wait for the next task to finish
+        // wait for the next message
         await callbackPort.nextWrite();
 
-        // it can happen that multiple messages are queued up at this point so we make sure to handle all
+        // for every message that we got...
         while (!callbackPort.empty()) {
             const message = JSON.parse(callbackPort.read());
             if (!isTaskResult(message)) {
                 throw new Error(`unexpected message: ${JSON.stringify(message)}`);
             }
 
-            ns.print(`got task result message ${JSON.stringify(message)}`);
+            ns.print(`task ${message.taskId} finished with result ${JSON.stringify(message)}`);
 
-            const task = startedTasks.get(message.taskId);
-            if (!task) {
+            const task = taskDispatcher.getDispatchedTask(message.taskId);
+            if (task == null) {
                 throw new Error(`unexpected task id ${message.taskId}`);
             }
 
@@ -78,14 +72,11 @@ export async function main(ns: NS): Promise<void> {
 
                 const newBatch = batchFactory.createBatch(spacerMs * 4);
                 for (const task of newBatch.tasks) {
-                    taskDispatcher.start(task, callbackPortNumber);
-                    startedTasks.set(task.id, task);
+                    taskDispatcher.dispatch(task, callbackPortNumber);
                 }
             }
 
-            startedTasks.delete(task.id);
-            startedTasks.delete(task.id);
-            taskDispatcher.finish(task.id);
+            taskDispatcher.free(task.id);
         }
     }
 }

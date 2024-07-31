@@ -32,12 +32,12 @@ export function isTaskResult(object: unknown): object is TaskResult {
     );
 }
 
-export const TASK_SCRIPTS = new Map<TaskType, { path: string; cost: number }>([
-    [TaskType.Hack, { path: '/batcher/tasks/hack.js', cost: 1.7 }],
-    [TaskType.Grow, { path: '/batcher/tasks/grow.js', cost: 1.75 }],
-    [TaskType.WeakenHack, { path: '/batcher/tasks/weaken.js', cost: 1.75 }],
-    [TaskType.WeakenGrow, { path: '/batcher/tasks/weaken.js', cost: 1.75 }],
-]);
+export const TASK_SCRIPTS: Record<TaskType, { path: string; cost: number }> = {
+    [TaskType.Hack]: { path: '/batcher/tasks/hack.js', cost: 1.7 },
+    [TaskType.Grow]: { path: '/batcher/tasks/grow.js', cost: 1.75 },
+    [TaskType.WeakenHack]: { path: '/batcher/tasks/weaken.js', cost: 1.75 },
+    [TaskType.WeakenGrow]: { path: '/batcher/tasks/weaken.js', cost: 1.75 },
+};
 
 // this is a wrapper to deduplicate the task (hack/grow/weaken) script logic
 // since we expect those to have exact ram costs, this wrapper MUST NOT have a ram cost
