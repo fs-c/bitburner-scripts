@@ -1,4 +1,4 @@
-import { getAllServers } from './batcher/utils';
+import { getAllServers } from './utils';
 
 export async function main(ns: NS): Promise<void> {
     const servers = getAllServers(ns);

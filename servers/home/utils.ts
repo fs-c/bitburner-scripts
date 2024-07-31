@@ -29,9 +29,17 @@ export function getAllServers(ns: NS): Set<string> {
 }
 
 export function isPrepped(ns: NS, server: string): boolean {
+    // ideally we would not need this but there has been the case where a full cycle of batches
+    // leaves a server a hair above/below the relevant thresholds so until that is ironed out
+    // we will use a tolerance
+    const tolerance = 0.05;
+
+    const securityLevelThreshold = ns.getServerMinSecurityLevel(server) * (1 + tolerance);
+    const moneyThreshold = ns.getServerMaxMoney(server) * (1 - tolerance);
+
     return (
-        ns.getServerSecurityLevel(server) === ns.getServerMinSecurityLevel(server) &&
-        ns.getServerMoneyAvailable(server) === ns.getServerMaxMoney(server)
+        ns.getServerSecurityLevel(server) <= securityLevelThreshold &&
+        ns.getServerMoneyAvailable(server) >= moneyThreshold
     );
 }
 

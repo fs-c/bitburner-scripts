@@ -1,4 +1,4 @@
-import { getAllServers } from '../utils.js';
+import { getAllServers } from '../../utils.js';
 import { TASK_SCRIPTS, Task } from './task.js';
 
 export interface DispatchableTask extends Task {
@@ -125,10 +125,6 @@ export class TaskDispatcher {
         }
 
         block.ram += dispatchedTask.ramCost;
-
-        if (dispatchedTask.pid != null) {
-            this.ns.kill(dispatchedTask.pid);
-        }
 
         this.dispatchedTasks.delete(dispatchedTaskId);
 

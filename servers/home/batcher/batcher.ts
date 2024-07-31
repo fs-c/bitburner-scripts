@@ -1,4 +1,4 @@
-import { isPrepped } from './utils.js';
+import { isPrepped } from '../utils.js';
 import { TaskType, isTaskResult } from './tasks/task.js';
 import { TaskDispatcher } from './tasks/task-dispatcher.js';
 import { BatchFactory } from './batches/batch-factory.js';
@@ -29,7 +29,7 @@ export async function main(ns: NS): Promise<void> {
         taskDispatcher.freeAndKillAll();
     });
 
-    const depth = getDepth(ns, target, spacerMs) / 5;
+    const depth = getDepth(ns, target, spacerMs) / 2;
     ns.tprint(`depth ${depth}`);
 
     for (let i = 0; i < depth; i++) {

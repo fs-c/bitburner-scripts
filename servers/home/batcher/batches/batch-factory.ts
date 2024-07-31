@@ -1,6 +1,6 @@
 import { DispatchableTask } from '../tasks/task-dispatcher.js';
 import { TaskType } from '../tasks/task.js';
-import { id } from '../utils.js';
+import { id } from '../../utils.js';
 
 export interface Batch {
     id: string;
