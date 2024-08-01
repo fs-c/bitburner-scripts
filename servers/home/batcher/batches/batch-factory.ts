@@ -1,6 +1,9 @@
 import { DispatchableTask } from '../tasks/task-dispatcher.js';
 import { TaskType } from '../tasks/task.js';
 import { id } from '../../utils.js';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('batch-factory');
 
 export interface Batch {
     id: string;
@@ -113,6 +116,11 @@ function calculateProtoHWGWBatch(
     const hackThreads = Math.floor(ns.hackAnalyzeThreads(target, moneyToSteal));
     const relativeHackEndTime = 0;
     const relativeHackStartTime = relativeHackEndTime - hackTime;
+
+    if (hackThreads < 0) {
+        logger.warn(ns, `hackThreads < 0`);
+        logger.warn(ns, JSON.stringify({ target, relativeMoneyToSteal, moneyToSteal }, null, 4));
+    }
 
     // (2)
     // security increase from the hack threads / security decrease from a single weaken thread

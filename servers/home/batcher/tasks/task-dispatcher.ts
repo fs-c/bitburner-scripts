@@ -1,5 +1,6 @@
 import { getAllServers } from '../../utils.js';
 import { TASK_SCRIPTS, Task } from './task.js';
+import { createLogger } from '../logger.js';
 
 export interface DispatchableTask extends Task {
     threads: number;
@@ -12,6 +13,8 @@ interface DispatchedTask extends DispatchableTask {
     // executed anywhere (todo: this is not great)
     pid: number | undefined;
 }
+
+const logger = createLogger('task-dispatcher');
 
 /**
  * this class assumes that ALL script executions happen through it
@@ -42,11 +45,11 @@ export class TaskDispatcher {
             });
 
             if (!ns.scp(taskScriptPaths, server)) {
-                throw new Error(`failed to scp scripts to ${server}`);
+                throw new Error(`failed to copy task scripts to ${server}`);
             }
-
-            ns.print(`copied scripts to ${server}`);
         }
+
+        logger.info(this.ns, `copied task scripts to ${servers.size} servers`);
 
         this.sortBlocks();
     }
@@ -72,8 +75,8 @@ export class TaskDispatcher {
         // calculations depend on being run with exactly as many threads as requested
         const block = this.blocks.find((block) => block.ram >= taskRamCost);
         if (!block) {
-            this.ns.print(`current resource availability`);
-            this.ns.print(JSON.stringify(this.blocks, null, 4));
+            logger.error(this.ns, `current resource availability`);
+            logger.error(this.ns, JSON.stringify(this.blocks, null, 4));
 
             throw new Error(`couldn't find block for task ${JSON.stringify(task)}`);
         }
@@ -95,9 +98,7 @@ export class TaskDispatcher {
             throw new Error(`failed to start task ${task.id}`);
         }
 
-        this.ns.print(
-            `started task ${task.id} on ${block.server} with ${task.threads} threads (pid ${pid})${dryRun ? ' (dry run)' : ''}'}`,
-        );
+        logger.debug(this.ns, `started task ${JSON.stringify(task)}${dryRun ? ' (dry run)' : ''}`);
 
         block.ram -= taskRamCost;
 

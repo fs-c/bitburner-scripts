@@ -1,6 +1,9 @@
 import { TaskType, isTaskResult } from './tasks/task.js';
 import { TaskDispatcher } from './tasks/task-dispatcher.js';
 import { BatchFactory } from './batches/batch-factory.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('batcher');
 
 function isPrepped(ns: NS, server: string): boolean {
     // ideally we would not need this but there has been the case where a full cycle of batches
@@ -61,7 +64,7 @@ export async function main(ns: NS): Promise<void> {
                 throw new Error(`unexpected message: ${JSON.stringify(message)}`);
             }
 
-            ns.print(`task ${message.taskId} finished with result ${JSON.stringify(message)}`);
+            logger.debug(ns, `task ${message.taskId} finished: ${JSON.stringify(message)}`);
 
             const task = taskDispatcher.getDispatchedTask(message.taskId);
             if (task == null) {
@@ -75,13 +78,13 @@ export async function main(ns: NS): Promise<void> {
 
                 const preppedAfterBatch = isPrepped(ns, target);
                 if (!preppedAfterBatch) {
-                    ns.print('WARN server is not prepped after batch');
+                    logger.warn(ns, 'server is not prepped after batch');
                 }
 
                 const newBatch = preppedAfterBatch
                     ? batchFactory.createHWGWBatch(spacerMs * 4)
-                    : // todo: we are spacing out the gw batch the same as the hwgw batch, but i am not
-                      // sure that is required
+                    : // todo: we are spacing out the gw batch the same as the hwgw batch, but i am
+                      // not sure that is required
                       batchFactory.createGWBatch(spacerMs * 4);
                 for (const task of newBatch.tasks) {
                     taskDispatcher.dispatch(task, callbackPortNumber);
