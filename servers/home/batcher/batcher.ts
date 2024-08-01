@@ -2,11 +2,6 @@ import { TaskType, isTaskResult } from './tasks/task.js';
 import { TaskDispatcher } from './tasks/task-dispatcher.js';
 import { BatchFactory } from './batches/batch-factory.js';
 
-function getDepth(ns: NS, target: string, spacerMs: number): number {
-    const weakenTime = ns.getWeakenTime(target);
-    return Math.floor(weakenTime / (4 * spacerMs));
-}
-
 function isPrepped(ns: NS, server: string): boolean {
     // ideally we would not need this but there has been the case where a full cycle of batches
     // leaves a server a hair above/below the relevant thresholds so until that is ironed out
@@ -27,13 +22,9 @@ export async function main(ns: NS): Promise<void> {
 
     const [target] = ns.args as [string];
 
-    if (!isPrepped(ns, target)) {
-        throw new Error('server is not prepped');
-    }
-
     const spacerMs = 50;
 
-    const batchFactory = new BatchFactory(ns, target, 0.8, spacerMs);
+    const batchFactory = new BatchFactory(ns, target, 0.95, spacerMs);
     const taskDispatcher = new TaskDispatcher(ns);
 
     const callbackPortNumber = ns.pid;
@@ -43,14 +34,16 @@ export async function main(ns: NS): Promise<void> {
         taskDispatcher.freeAndKillAll();
     });
 
-    const depth = getDepth(ns, target, spacerMs) / 2;
-    ns.tprint(`depth ${depth}`);
+    const depth = batchFactory.hwgwBatchDepth;
+    const serverIsPrepped = isPrepped(ns, target);
 
     for (let i = 0; i < depth; i++) {
         // the last task finishes after (tasks.length - 1) * spacer but we also want there to be
         // a spacer between batches
         const additionalDelayMs = i * spacerMs * 4;
-        const batch = batchFactory.createBatch(additionalDelayMs);
+        const batch = serverIsPrepped
+            ? batchFactory.createHWGWBatch(additionalDelayMs)
+            : batchFactory.createGWBatch(additionalDelayMs);
 
         for (const task of batch.tasks) {
             taskDispatcher.dispatch(task, callbackPortNumber);
@@ -80,11 +73,16 @@ export async function main(ns: NS): Promise<void> {
                 // now have capacity for another batch
                 // todo: this is hacky, we should have a better way to track when a batch finishes
 
-                if (!isPrepped(ns, target)) {
+                const preppedAfterBatch = isPrepped(ns, target);
+                if (!preppedAfterBatch) {
                     ns.print('WARN server is not prepped after batch');
                 }
 
-                const newBatch = batchFactory.createBatch(spacerMs * 4);
+                const newBatch = preppedAfterBatch
+                    ? batchFactory.createHWGWBatch(spacerMs * 4)
+                    : // todo: we are spacing out the gw batch the same as the hwgw batch, but i am not
+                      // sure that is required
+                      batchFactory.createGWBatch(spacerMs * 4);
                 for (const task of newBatch.tasks) {
                     taskDispatcher.dispatch(task, callbackPortNumber);
                 }
