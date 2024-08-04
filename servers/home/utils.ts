@@ -35,3 +35,43 @@ export function id(): string {
     const vr = ((parseInt(d.slice(16, 17), 16) & 0x3) | 0x8).toString(16);
     return `${d.slice(0, 8)}-${d.slice(8, 12)}-4${d.slice(13, 16)}-${vr}${d.slice(17, 20)}-${d.slice(20, 32)}`;
 }
+
+// taken from https://en.wikipedia.org/wiki/Levenshtein_distance
+export function levenshteinDistance(a: string, b: string): number {
+    // for all i and j, distances[i,j] will hold the levenshtein distance between
+    // the first i characters of s and the first j characters of t
+    const distances: number[][] = Array.from({ length: a.length + 1 }, () =>
+        Array.from({ length: b.length + 1 }, () => 0),
+    );
+
+    // source prefixes can be transformed into empty string by dropping all characters
+    for (let i = 1; i <= a.length; i++) {
+        // @ts-ignore we know for sure that this is defined
+        distances[i][0] = i;
+    }
+
+    // target prefixes can be reached from empty source prefix by inserting every character
+    for (let j = 1; j <= b.length; j++) {
+        // @ts-ignore we know for sure that this is defined
+        distances[0][j] = j;
+    }
+
+    for (let j = 1; j <= b.length; j++) {
+        for (let i = 1; i <= a.length; i++) {
+            const substitutionCost = a[i] === b[j] ? 0 : 1;
+
+            // @ts-ignore we know for sure that this is defined
+            distances[i][j] = Math.min(
+                // @ts-ignore
+                distances[i - 1][j] + 1, // deletion
+                // @ts-ignore
+                distances[i][j - 1] + 1, // insertion
+                // @ts-ignore
+                distances[i - 1][j - 1] + substitutionCost, // substitution
+            );
+        }
+    }
+
+    // @ts-ignore
+    return distances[a.length][b.length];
+}
