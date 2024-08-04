@@ -1,14 +1,13 @@
 import { getAllServers } from '../../utils.js';
-import { TASK_SCRIPTS, Task } from './task.js';
+import { Task, TASK_SCRIPTS } from './task.js';
 import { createLogger } from '../logger.js';
 
 export interface DispatchableTask extends Task {
-    threads: number;
+    id: string;
 }
 
 interface DispatchedTask extends DispatchableTask {
     server: string;
-    ramCost: number;
     // undefined if this DispatchedTask is the result of a dry run and was not actually
     // executed anywhere (todo: this is not great)
     pid: number | undefined;
@@ -18,11 +17,16 @@ const logger = createLogger('task-dispatcher');
 
 /**
  * this class assumes that ALL script executions happen through it
+ * NO other place may use exec() etc.
  */
 export class TaskDispatcher {
     private readonly blocks: { server: string; ram: number }[] = [];
 
     private readonly dispatchedTasks = new Map<string, DispatchedTask>();
+
+    get totalRam(): number {
+        return this.blocks.reduce((acc, block) => acc + block.ram, 0);
+    }
 
     constructor(private readonly ns: NS) {
         const servers = getAllServers(this.ns);
@@ -75,9 +79,6 @@ export class TaskDispatcher {
         // calculations depend on being run with exactly as many threads as requested
         const block = this.blocks.find((block) => block.ram >= taskRamCost);
         if (!block) {
-            logger.error(this.ns, `current resource availability`);
-            logger.error(this.ns, JSON.stringify(this.blocks, null, 4));
-
             throw new Error(`couldn't find block for task ${JSON.stringify(task)}`);
         }
 
@@ -90,7 +91,7 @@ export class TaskDispatcher {
                   task.id,
                   task.taskType,
                   task.target,
-                  task.delayMs,
+                  task.startTime,
                   callbackPort,
               );
 
@@ -104,7 +105,6 @@ export class TaskDispatcher {
 
         this.dispatchedTasks.set(task.id, {
             ...task,
-            ramCost: taskRamCost,
             server: block.server,
             pid,
         });
@@ -125,7 +125,7 @@ export class TaskDispatcher {
             throw new Error(`couldn't find block for started task ${dispatchedTask}`);
         }
 
-        block.ram += dispatchedTask.ramCost;
+        block.ram += dispatchedTask.threads * TASK_SCRIPTS[dispatchedTask.taskType].cost;
 
         this.dispatchedTasks.delete(dispatchedTaskId);
 
@@ -133,18 +133,30 @@ export class TaskDispatcher {
         this.sortBlocks();
     }
 
-    public freeAndKillAll(): void {
-        for (const [taskId, dispatchedTask] of this.dispatchedTasks) {
-            this.free(taskId);
-
-            if (dispatchedTask.pid != null) {
-                this.ns.kill(dispatchedTask.pid);
-            }
-        }
-    }
-
     public getDispatchedTask(taskId: string): DispatchedTask | undefined {
         return this.dispatchedTasks.get(taskId);
+    }
+
+    public couldFit(tasks: DispatchableTask[]): boolean {
+        // we want to sort tasks by ram cost because presumably those are the ones that we won't be
+        // able to fit, we use threads as a surrogate here to avoid computing the actual ram costs
+        const sortedTasks = tasks.sort((a, b) => b.threads - a.threads);
+        const dispatchedTaskIds = new Set<string>();
+
+        try {
+            for (const task of sortedTasks) {
+                this.dispatch(task, -1, { dryRun: true });
+                dispatchedTaskIds.add(task.id);
+            }
+        } catch (err) {
+            return false;
+        } finally {
+            for (const taskId of dispatchedTaskIds) {
+                this.free(taskId);
+            }
+        }
+
+        return true;
     }
 
     private sortBlocks(): void {

@@ -10,10 +10,11 @@ export enum TaskType {
 }
 
 export interface Task {
-    id: string;
     taskType: TaskType;
     target: string;
-    delayMs: number;
+    startTime: number;
+    endTime: number;
+    threads: number;
 }
 
 export interface TaskResult {
@@ -21,6 +22,7 @@ export interface TaskResult {
     taskId: string;
     taskType: TaskType;
     timeTakenMs: number;
+    returnValue: number;
 }
 
 export function isTaskResult(object: unknown): object is TaskResult {
@@ -43,7 +45,7 @@ export const TASK_SCRIPTS: Record<TaskType, { path: string; cost: number }> = {
 // since we expect those to have exact ram costs, this wrapper MUST NOT have a ram cost
 export async function taskWrapper(
     ns: NS,
-    hgwFunction: (host: string, opts: BasicHGWOptions) => Promise<unknown>,
+    hgwFunction: (host: string, opts: BasicHGWOptions) => Promise<number>,
 ): Promise<void> {
     // todo: there is a ns.atExit() function to add an exit callback, should use that to report
     //       unexpected script death, but there is no way to report errors atm
@@ -59,7 +61,7 @@ export async function taskWrapper(
     const opts = { additionalMsec: delayMs };
 
     const start = Date.now();
-    await hgwFunction(target, opts);
+    const returnValue = await hgwFunction(target, opts);
     const end = Date.now();
 
     ns.writePort(
@@ -69,6 +71,7 @@ export async function taskWrapper(
             taskId: id,
             taskType,
             timeTakenMs: end - start,
+            returnValue,
         } satisfies TaskResult),
     );
 }

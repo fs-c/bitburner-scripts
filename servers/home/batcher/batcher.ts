@@ -1,7 +1,7 @@
 import { TaskType, isTaskResult } from './tasks/task.js';
 import { TaskDispatcher } from './tasks/task-dispatcher.js';
-import { BatchFactory } from './batches/batch-factory.js';
 import { createLogger } from './logger.js';
+import { ProtoBatch } from './batches/proto-batch.js';
 
 const logger = createLogger('batcher');
 
@@ -17,28 +17,34 @@ export async function main(ns: NS): Promise<void> {
 
     const [target] = ns.args as [string];
 
-    const spacerMs = 50;
+    const spacerMs = 5;
 
-    const batchFactory = new BatchFactory(ns, target, 0.95, spacerMs);
+    const hackProtoBatch = ProtoBatch.createHWGW(ns, target, 0.7, spacerMs);
+    const prepProtoBatch = ProtoBatch.createGW(ns, target, 1.5, spacerMs);
+
     const taskDispatcher = new TaskDispatcher(ns);
 
     const callbackPortNumber = ns.pid;
     const callbackPort = ns.getPortHandle(callbackPortNumber);
 
-    ns.atExit(() => {
-        taskDispatcher.freeAndKillAll();
-    });
-
-    const depth = batchFactory.hwgwBatchDepth;
+    const depth = Math.min(
+        hackProtoBatch.maxConcurrentBatches(),
+        prepProtoBatch.maxConcurrentBatches(),
+    );
     const serverIsPrepped = isPrepped(ns, target);
+
+    logger.info(
+        ns,
+        `starting batcher for ${target} (prepped: ${serverIsPrepped}) with depth ${depth} and spacer ${spacerMs} ms`,
+    );
 
     for (let i = 0; i < depth; i++) {
         // the last task finishes after (tasks.length - 1) * spacer but we also want there to be
         // a spacer between batches
         const additionalDelayMs = i * spacerMs * 4;
         const batch = serverIsPrepped
-            ? batchFactory.createHWGWBatch(additionalDelayMs)
-            : batchFactory.createGWBatch(additionalDelayMs);
+            ? hackProtoBatch.generateBatch(additionalDelayMs)
+            : prepProtoBatch.generateBatch(additionalDelayMs);
 
         for (const task of batch.tasks) {
             taskDispatcher.dispatch(task, callbackPortNumber);
@@ -53,14 +59,14 @@ export async function main(ns: NS): Promise<void> {
         while (!callbackPort.empty()) {
             const message = JSON.parse(callbackPort.read());
             if (!isTaskResult(message)) {
-                throw new Error(`unexpected message: ${JSON.stringify(message)}`);
+                throw new Error(`unexpected message: ${JSON.stringify(message)} `);
             }
 
-            logger.debug(ns, `task ${message.taskId} finished: ${JSON.stringify(message)}`);
+            logger.debug(ns, `task ${message.taskId} finished: ${JSON.stringify(message)} `);
 
             const task = taskDispatcher.getDispatchedTask(message.taskId);
             if (task == null) {
-                throw new Error(`unexpected task id ${message.taskId}`);
+                throw new Error(`unexpected task id ${message.taskId} `);
             }
 
             if (task.taskType === TaskType.WeakenGrow) {
@@ -74,10 +80,9 @@ export async function main(ns: NS): Promise<void> {
                 }
 
                 const newBatch = preppedAfterBatch
-                    ? batchFactory.createHWGWBatch(spacerMs * 4)
-                    : // todo: we are spacing out the gw batch the same as the hwgw batch, but i am
-                      // not sure that is required
-                      batchFactory.createGWBatch(spacerMs * 4);
+                    ? hackProtoBatch.generateBatch(hackProtoBatch.unsafeDuration())
+                    : // todo: not sure if different spacings here are safe
+                      prepProtoBatch.generateBatch(prepProtoBatch.unsafeDuration());
                 for (const task of newBatch.tasks) {
                     taskDispatcher.dispatch(task, callbackPortNumber);
                 }

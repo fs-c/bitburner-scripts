@@ -22,17 +22,17 @@ interface LogLevelMetadata {
     label: string;
 }
 
-const logLevelMetadata: Record<LogLevel, LogLevelMetadata> = {
+const loggingConfig: Record<LogLevel, LogLevelMetadata> = {
     [LogLevel.Debug]: { order: 0, enabled: false, console: false, label: 'DEBUG' },
-    [LogLevel.Info]: { order: 1, enabled: true, console: false, label: ' INFO' },
+    [LogLevel.Info]: { order: 1, enabled: true, console: true, label: ' INFO' },
     [LogLevel.Warning]: { order: 2, enabled: true, console: true, label: ' WARN' },
     [LogLevel.Error]: { order: 3, enabled: true, console: true, label: 'ERROR' },
 };
 
-const initialDate = new Date();
-
 // needs to end in .txt or ns.write will throw an error (╯°□°）╯︵ ┻━┻
-export const LOG_FILE_NAME = `batcher-${formatDateForLogFileName(initialDate)}.log.txt`;
+// don't generate a run-unique name here because it is annoying to delete log files all the time
+// and they seem to slow the game down if they are large (?)
+export const LOG_FILE_NAME = `batcher.log.txt`;
 
 // this is a bit of a hack because it only works properly if all createLogger calls happen
 // before anything is logged anywhere, but i think that's a reasonable assumption
@@ -67,22 +67,18 @@ export function createLogger(tag: string): Logger {
     };
 
     return {
-        debug: (ns: NS, message: string) => log(logLevelMetadata[LogLevel.Debug], ns, message),
-        info: (ns: NS, message: string) => log(logLevelMetadata[LogLevel.Info], ns, message),
-        warn: (ns: NS, message: string) => log(logLevelMetadata[LogLevel.Warning], ns, message),
-        error: (ns: NS, message: string) => log(logLevelMetadata[LogLevel.Error], ns, message),
+        debug: (ns: NS, message: string) => log(loggingConfig[LogLevel.Debug], ns, message),
+        info: (ns: NS, message: string) => log(loggingConfig[LogLevel.Info], ns, message),
+        warn: (ns: NS, message: string) => log(loggingConfig[LogLevel.Warning], ns, message),
+        error: (ns: NS, message: string) => log(loggingConfig[LogLevel.Error], ns, message),
     };
 }
 
 export function setLogLevel(level: LogLevel): void {
-    const order = logLevelMetadata[level].order;
-    for (const meta of Object.values(logLevelMetadata)) {
+    const order = loggingConfig[level].order;
+    for (const meta of Object.values(loggingConfig)) {
         meta.enabled = meta.order >= order;
     }
-}
-
-function formatDateForLogFileName(date: Date): string {
-    return date.toISOString().replace(/:/g, '-');
 }
 
 function formatDateForLogLine(date: Date): string {
