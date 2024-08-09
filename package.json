@@ -21,5 +21,8 @@
         "@types/react-dom": "^18.2.21",
         "esbuild": "^0.19.12",
         "esbuild-bitburner-plugin": "^1.5.0"
+    },
+    "devDependencies": {
+        "typescript": "^5.5.4"
     }
 }

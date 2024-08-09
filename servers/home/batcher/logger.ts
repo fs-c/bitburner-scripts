@@ -1,5 +1,4 @@
-// yes this file uses stateful globals which is not great but i feel like avoiding them
-// would make the code (and consumers) harder to read and maintain in this case
+// todo: this implementation is stupid and doesn't fit the use case well
 
 interface Logger {
     debug: (ns: NS, message: string) => void;
@@ -23,7 +22,7 @@ interface LogLevelMetadata {
 }
 
 const loggingConfig: Record<LogLevel, LogLevelMetadata> = {
-    [LogLevel.Debug]: { order: 0, enabled: false, console: false, label: 'DEBUG' },
+    [LogLevel.Debug]: { order: 0, enabled: true, console: true, label: 'DEBUG' },
     [LogLevel.Info]: { order: 1, enabled: true, console: true, label: ' INFO' },
     [LogLevel.Warning]: { order: 2, enabled: true, console: true, label: ' WARN' },
     [LogLevel.Error]: { order: 3, enabled: true, console: true, label: 'ERROR' },

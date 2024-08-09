@@ -39,10 +39,13 @@ export async function main(ns: NS): Promise<void> {
                 relativeMoneyToSteal,
                 spacerMs,
             );
+            // const depth = hackProtoBatch.maxConcurrentBatches();
+            const depth = 10;
 
             // check if we can theoretically fit it into ram, assuming it were one continuous block
             // we do this first because it is a lot cheaper than actually simulating it
-            if (taskDispatcher.totalRam < hackProtoBatch.peakRamUsage()) {
+            const cyclePeakRam = hackProtoBatch.peakRamUsage() * depth;
+            if (taskDispatcher.totalRam < cyclePeakRam) {
                 // if we already don't have enough ram for this there is no way we will have enough
                 // for higher steal values
                 break;
@@ -52,7 +55,7 @@ export async function main(ns: NS): Promise<void> {
 
             // now check if we can actually fit it into ram, given the actual block/ram distribution
             const allTasks = [];
-            for (let i = 0; i < hackProtoBatch.maxConcurrentBatches(); i++) {
+            for (let i = 0; i < depth; i++) {
                 const batch = hackProtoBatch.generateBatch(spacerMs);
                 allTasks.push(...batch.tasks);
             }
@@ -74,8 +77,7 @@ export async function main(ns: NS): Promise<void> {
 
             // we could fit this into ram, let's see how it performs
 
-            const totalMoneyPerCycle =
-                hackProtoBatch.maxConcurrentBatches() * hackProtoBatch.expectedMoneyChange();
+            const totalMoneyPerCycle = depth * hackProtoBatch.expectedMoneyChange();
 
             const moneyPerSecond = totalMoneyPerCycle / hackProtoBatch.totalDuration() / 1000;
             if (moneyPerSecond > currentBest.moneyPerSecond) {

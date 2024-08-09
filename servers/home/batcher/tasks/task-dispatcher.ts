@@ -34,6 +34,10 @@ export class TaskDispatcher {
         const taskScriptPaths = Object.values(TASK_SCRIPTS).map((taskScript) => taskScript.path);
 
         for (const server of servers) {
+            if (!ns.hasRootAccess(server)) {
+                continue;
+            }
+
             const availableRam = this.ns.getServerMaxRam(server) - this.ns.getServerUsedRam(server);
             if (availableRam === 0) {
                 // a bunch of servers have no ram, this is not an error case
@@ -99,7 +103,11 @@ export class TaskDispatcher {
             throw new Error(`failed to start task ${task.id}`);
         }
 
-        logger.debug(this.ns, `started task ${JSON.stringify(task)}${dryRun ? ' (dry run)' : ''}`);
+        logger.debug(
+            this.ns,
+            `started task ${task.id}/${task.taskType} with ${task.threads} threads on ${block.server}` +
+                `${dryRun ? ' (dry run)' : ''}`,
+        );
 
         block.ram -= taskRamCost;
 
@@ -131,6 +139,18 @@ export class TaskDispatcher {
 
         // todo-performance: see above
         this.sortBlocks();
+    }
+
+    public freeAndKillAll(): void {
+        logger.debug(this.ns, `freeing and killing all ${this.dispatchedTasks.size} tasks`);
+
+        for (const dispatchedTaskId of this.dispatchedTasks.keys()) {
+            const pid = this.dispatchedTasks.get(dispatchedTaskId)?.pid;
+            if (pid !== undefined) {
+                this.ns.kill(pid);
+            }
+            this.free(dispatchedTaskId);
+        }
     }
 
     public getDispatchedTask(taskId: string): DispatchedTask | undefined {

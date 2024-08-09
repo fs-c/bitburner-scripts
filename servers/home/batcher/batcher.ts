@@ -1,11 +1,14 @@
-import { TaskType, isTaskResult } from './tasks/task.js';
-import { TaskDispatcher } from './tasks/task-dispatcher.js';
+import { TaskType, isTaskReport } from './tasks/task.js';
 import { createLogger } from './logger.js';
 import { ProtoBatch } from './batches/proto-batch.js';
+import { BatchManager, isBatchFinishedReport } from './batches/batch-manager.js';
+import { Port } from './ports.js';
+import { TaskDispatcher } from './tasks/task-dispatcher.js';
 
 const logger = createLogger('batcher');
 
 function isPrepped(ns: NS, server: string): boolean {
+    const a = 1;
     return (
         ns.getServerSecurityLevel(server) <= ns.getServerMinSecurityLevel(server) &&
         ns.getServerMoneyAvailable(server) >= ns.getServerMaxMoney(server)
@@ -13,38 +16,87 @@ function isPrepped(ns: NS, server: string): boolean {
 }
 
 export async function main(ns: NS): Promise<void> {
-    // todo: this function is a mess, i am also not sure if BatchFactory is a good concept
-
     const [target] = ns.args as [string];
 
     const spacerMs = 5;
 
-    const hackProtoBatch = ProtoBatch.createHWGW(ns, target, 0.7, spacerMs);
-    const prepProtoBatch = ProtoBatch.createGW(ns, target, 1.5, spacerMs);
+    const hackProtoBatch = ProtoBatch.createHWGW(ns, target, 0.9, spacerMs);
 
-    const taskDispatcher = new TaskDispatcher(ns);
+    const callbackPort = ns.getPortHandle(Port.Batcher);
 
-    const callbackPortNumber = ns.pid;
-    const callbackPort = ns.getPortHandle(callbackPortNumber);
-
-    const depth = Math.min(
-        hackProtoBatch.maxConcurrentBatches(),
-        prepProtoBatch.maxConcurrentBatches(),
-    );
+    // todo: also consider max batches that can fit in memory
+    // const depth = Math.min(
+    //     hackProtoBatch.maxConcurrentBatches(),
+    //     prepProtoBatch.maxConcurrentBatches(),
+    // );
+    const depth = 1;
     const serverIsPrepped = isPrepped(ns, target);
 
-    logger.info(
-        ns,
-        `starting batcher for ${target} (prepped: ${serverIsPrepped}) with depth ${depth} and spacer ${spacerMs} ms`,
-    );
+    if (!serverIsPrepped) {
+        logger.info(ns, 'server is not prepped, starting to prep');
+
+        await prepServer(ns, target);
+    }
+
+    const batchManager = new BatchManager(ns, spacerMs * depth * 4, Port.Batcher);
+
+    logger.info(ns, `starting batch manager with depth ${depth}`);
+
+    for (let i = 0; i < depth; i++) {
+        const additionalSpacerMs = i * spacerMs * 4;
+
+        batchManager.start(hackProtoBatch, additionalSpacerMs);
+    }
+
+    while (true) {
+        await callbackPort.nextWrite();
+
+        while (!callbackPort.empty()) {
+            const message = JSON.parse(callbackPort.read());
+            if (!isBatchFinishedReport(message)) {
+                throw new Error(`unexpected message: ${JSON.stringify(message)} `);
+            }
+
+            const { batchId } = message;
+
+            logger.info(
+                ns,
+                `batch ${batchId} finished, server status: ` +
+                    `money ${ns.formatPercent(
+                        ns.getServerMoneyAvailable(target) / ns.getServerMaxMoney(target),
+                        3
+                    )}, ` +
+                    `security: ${ns.formatPercent(
+                        ns.getServerMinSecurityLevel(target) / ns.getServerSecurityLevel(target),
+                        3
+                    )}`
+            );
+        }
+    }
+}
+
+// todo: right now the batchmanager doesn't really handle multiple different kinds of batches well
+// so we separate out prepping here
+async function prepServer(ns: NS, target: string): Promise<void> {
+    if (isPrepped(ns, target)) {
+        return;
+    }
+
+    const callbackPortNumber = Port.Batcher;
+    const callbackPort = ns.getPortHandle(callbackPortNumber);
+
+    const spacerMs = 5;
+    const prepProtoBatch = ProtoBatch.createGW(ns, target, 1.5, spacerMs);
+
+    const depth = 100; // todo
+
+    const taskDispatcher = new TaskDispatcher(ns);
 
     for (let i = 0; i < depth; i++) {
         // the last task finishes after (tasks.length - 1) * spacer but we also want there to be
         // a spacer between batches
         const additionalDelayMs = i * spacerMs * 4;
-        const batch = serverIsPrepped
-            ? hackProtoBatch.generateBatch(additionalDelayMs)
-            : prepProtoBatch.generateBatch(additionalDelayMs);
+        const batch = prepProtoBatch.generateBatch(additionalDelayMs);
 
         for (const task of batch.tasks) {
             taskDispatcher.dispatch(task, callbackPortNumber);
@@ -58,31 +110,33 @@ export async function main(ns: NS): Promise<void> {
         // for every message that we got...
         while (!callbackPort.empty()) {
             const message = JSON.parse(callbackPort.read());
-            if (!isTaskResult(message)) {
+            if (!isTaskReport(message)) {
                 throw new Error(`unexpected message: ${JSON.stringify(message)} `);
             }
-
-            logger.debug(ns, `task ${message.taskId} finished: ${JSON.stringify(message)} `);
 
             const task = taskDispatcher.getDispatchedTask(message.taskId);
             if (task == null) {
                 throw new Error(`unexpected task id ${message.taskId} `);
             }
 
-            if (task.taskType === TaskType.WeakenGrow) {
-                // if the task that just finished was a weaken grow then a batch just finished, we
-                // now have capacity for another batch
-                // todo: this is hacky, we should have a better way to track when a batch finishes
+            logger.debug(
+                ns,
+                `task ${message.taskId}/${message.taskType} finished ` +
+                    `with ${message.returnValue} (${ns.formatPercent(
+                        message.returnValue / task.validReturnValue,
+                        3
+                    )}) ` +
+                    `in ${ns.formatNumber(message.timeTakenMs)}ms`
+            );
 
+            if (task.taskType === TaskType.Weaken) {
                 const preppedAfterBatch = isPrepped(ns, target);
-                if (!preppedAfterBatch) {
-                    logger.warn(ns, 'server is not prepped after batch');
+                if (preppedAfterBatch) {
+                    taskDispatcher.freeAndKillAll();
+                    return;
                 }
 
-                const newBatch = preppedAfterBatch
-                    ? hackProtoBatch.generateBatch(hackProtoBatch.unsafeDuration())
-                    : // todo: not sure if different spacings here are safe
-                      prepProtoBatch.generateBatch(prepProtoBatch.unsafeDuration());
+                const newBatch = prepProtoBatch.generateBatch(spacerMs * depth);
                 for (const task of newBatch.tasks) {
                     taskDispatcher.dispatch(task, callbackPortNumber);
                 }

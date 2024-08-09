@@ -1,6 +1,9 @@
 import { Task, TASK_SCRIPTS, TaskType } from '../tasks/task.js';
 import { id } from '../../utils.js';
 import { Batch } from './batch.js';
+import { createLogger } from '../logger.js';
+
+const logger = createLogger('proto-batch');
 
 export class ProtoBatch {
     public static createHWGW(
@@ -46,22 +49,21 @@ export class ProtoBatch {
         // security increase from the hack threads / security decrease from a single weaken thread
         //   = weaken threads
         // this works because weaken is linear in the number of threads
-        const weakenHackThreads = Math.ceil(
-            ns.hackAnalyzeSecurity(hackThreads) / ns.weakenAnalyze(1),
-        );
+        const securityIncreaseFromHack = ns.hackAnalyzeSecurity(hackThreads);
+        const weakenHackThreads = Math.ceil(securityIncreaseFromHack / ns.weakenAnalyze(1));
         const relativeWeakenHackEndTime = relativeHackEndTime + spacerMs;
         const relativeWeakenHackStartTime = relativeWeakenHackEndTime - weakenTime;
 
         // (3)
-        const growThreads = Math.ceil(ns.growthAnalyze(target, maxMoney / serverMoneyAfterHack));
+        const growthFactor = maxMoney / serverMoneyAfterHack;
+        const growThreads = Math.ceil(ns.growthAnalyze(target, maxMoney / growthFactor));
         const relativeGrowEndTime = relativeWeakenHackEndTime + spacerMs;
         const relativeGrowStartTime = relativeGrowEndTime - growTime;
 
         // (4)
         // again, this works because weaken is linear in the number of threads
-        const weakenGrowThreads = Math.ceil(
-            ns.growthAnalyzeSecurity(growThreads) / ns.weakenAnalyze(1),
-        );
+        const securityIncreaseFromGrow = ns.growthAnalyzeSecurity(growThreads);
+        const weakenGrowThreads = Math.ceil(securityIncreaseFromGrow / ns.weakenAnalyze(1));
         const relativeWeakenGrowEndTime = relativeGrowEndTime + spacerMs;
         const relativeWeakenGrowStartTime = relativeWeakenGrowEndTime - weakenTime;
 
@@ -85,13 +87,15 @@ export class ProtoBatch {
                 startTime: hackStartTime,
                 endTime: hackStartTime + hackTime,
                 threads: hackThreads,
+                validReturnValue: moneyToSteal,
             },
             {
-                taskType: TaskType.WeakenHack,
+                taskType: TaskType.Weaken,
                 target,
                 startTime: weakenHackStartTime,
                 endTime: weakenHackStartTime + weakenTime,
                 threads: weakenHackThreads,
+                validReturnValue: securityIncreaseFromHack,
             },
             {
                 taskType: TaskType.Grow,
@@ -99,17 +103,22 @@ export class ProtoBatch {
                 startTime: growStartTime,
                 endTime: growStartTime + growTime,
                 threads: growThreads,
+                validReturnValue: growthFactor,
             },
             {
-                taskType: TaskType.WeakenGrow,
+                taskType: TaskType.Weaken,
                 target,
                 startTime: weakenGrowStartTime,
                 endTime: weakenGrowStartTime + weakenTime,
                 threads: weakenGrowThreads,
+                validReturnValue: securityIncreaseFromGrow,
             },
-        ];
+        ].sort((a, b) => a.startTime - b.startTime);
 
-        return new ProtoBatch(target, tasks, spacerMs, { money: moneyToSteal });
+        logger.info(ns, `created HWGW proto-batch for ${target} with ${tasks.length} tasks`);
+        logger.debug(ns, JSON.stringify(tasks, null, 4));
+
+        return new ProtoBatch(ns, target, tasks, spacerMs, { money: moneyToSteal });
     }
 
     public static createGW(
@@ -133,8 +142,8 @@ export class ProtoBatch {
         const relativeGrowEndTime = 0;
         const relativeGrowStartTime = relativeGrowEndTime - growTime;
 
-        const growSecurityIncrease = ns.growthAnalyzeSecurity(growThreads);
-        const weakenGrowThreads = Math.ceil(growSecurityIncrease / ns.weakenAnalyze(1));
+        const securityIncreaseFromGrow = ns.growthAnalyzeSecurity(growThreads);
+        const weakenGrowThreads = Math.ceil(securityIncreaseFromGrow / ns.weakenAnalyze(1));
         const relativeWeakenGrowEndTime = relativeGrowEndTime + spacerMs;
         const relativeWeakenGrowStartTime = relativeWeakenGrowEndTime - weakenTime;
 
@@ -153,20 +162,26 @@ export class ProtoBatch {
                 startTime: growStartTime,
                 endTime: growStartTime + growTime,
                 threads: growThreads,
+                validReturnValue: relativeMoneyToGrow,
             },
             {
-                taskType: TaskType.WeakenGrow,
+                taskType: TaskType.Weaken,
                 target,
                 startTime: weakenGrowStartTime,
                 endTime: weakenGrowStartTime + weakenTime,
                 threads: weakenGrowThreads,
+                validReturnValue: securityIncreaseFromGrow,
             },
-        ];
+        ].sort((a, b) => a.startTime - b.startTime);
 
-        return new ProtoBatch(target, tasks, spacerMs, { money: 0 });
+        logger.info(ns, `created GW proto-batch for ${target} with ${tasks.length} tasks`);
+        logger.debug(ns, JSON.stringify(tasks, null, 4));
+
+        return new ProtoBatch(ns, target, tasks, spacerMs, { money: 0 });
     }
 
     private constructor(
+        private readonly ns: NS,
         private readonly target: string,
         private readonly tasks: Task[],
         private readonly delayMs: number,
@@ -187,9 +202,8 @@ export class ProtoBatch {
     }
 
     public totalDuration(): number {
+        // todo-performance: this could be cached, also we could depend on task order
         const earliestStartTime = Math.min(...this.tasks.map((task) => task.startTime));
-        // todo-optimization: we could depend on tasks being sorted by endTime (which it always is
-        // at the moment)
         const latestEndTime = Math.max(...this.tasks.map((task) => task.endTime));
 
         return latestEndTime - earliestStartTime;
@@ -200,24 +214,11 @@ export class ProtoBatch {
     }
 
     public maxConcurrentBatches(): number {
-        // todo: some sources say that the calculation should be
-        //  Math.floor(this.totalDuration() / this.unsafeDuration())
-        // but i don't see how that would work
-        //
-        // to me it seems like the number of batches that can be run concurrently is how many times
-        // we can start a batch before we overlap with the last start time of a task
-
-        const latestTask = this.tasks.toSorted((a, b) => b.startTime - a.endTime)[0];
-        if (latestTask == null) {
-            throw new Error('no tasks');
-        }
-
-        const latestTaskDuration = latestTask.endTime - latestTask.startTime;
-
-        return Math.floor(latestTaskDuration / this.unsafeDuration());
+        return Math.floor(this.totalDuration() / this.unsafeDuration());
     }
 
     public peakRamUsage(): number {
+        // todo-performance: this could be cached
         return this.tasks.reduce(
             (peak, task) => (peak += task.threads * TASK_SCRIPTS[task.taskType].cost),
             0,

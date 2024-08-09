@@ -3,10 +3,7 @@ import { BasicHGWOptions } from '@/NetscriptDefinitions';
 export enum TaskType {
     Hack = 'Hack',
     Grow = 'Grow',
-    // todo: right now we need to distinguish between the two weaken types in the batcher logic but
-    //  this is hacky and should not be necessary; we should just have one weaken type
-    WeakenHack = 'WeakenHack',
-    WeakenGrow = 'WeakenGrow',
+    Weaken = 'Weaken',
 }
 
 export interface Task {
@@ -15,30 +12,30 @@ export interface Task {
     startTime: number;
     endTime: number;
     threads: number;
+    validReturnValue: number;
 }
 
-export interface TaskResult {
-    type: 'task-result';
+export interface TaskReport {
+    type: 'task-report';
     taskId: string;
     taskType: TaskType;
     timeTakenMs: number;
     returnValue: number;
 }
 
-export function isTaskResult(object: unknown): object is TaskResult {
+export function isTaskReport(object: unknown): object is TaskReport {
     return (
         typeof object === 'object' &&
         object !== null &&
         'type' in object &&
-        object.type === 'task-result'
+        object.type === 'task-report'
     );
 }
 
 export const TASK_SCRIPTS: Record<TaskType, { path: string; cost: number }> = {
     [TaskType.Hack]: { path: '/batcher/tasks/hack.js', cost: 1.7 },
     [TaskType.Grow]: { path: '/batcher/tasks/grow.js', cost: 1.75 },
-    [TaskType.WeakenHack]: { path: '/batcher/tasks/weaken.js', cost: 1.75 },
-    [TaskType.WeakenGrow]: { path: '/batcher/tasks/weaken.js', cost: 1.75 },
+    [TaskType.Weaken]: { path: '/batcher/tasks/weaken.js', cost: 1.75 },
 };
 
 // this is a wrapper to deduplicate the task (hack/grow/weaken) script logic
@@ -47,9 +44,6 @@ export async function taskWrapper(
     ns: NS,
     hgwFunction: (host: string, opts: BasicHGWOptions) => Promise<number>,
 ): Promise<void> {
-    // todo: there is a ns.atExit() function to add an exit callback, should use that to report
-    //       unexpected script death, but there is no way to report errors atm
-
     const [id, taskType, target, delayMs, port] = ns.args as [
         string,
         TaskType,
@@ -67,11 +61,11 @@ export async function taskWrapper(
     ns.writePort(
         port,
         JSON.stringify({
-            type: 'task-result',
+            type: 'task-report',
             taskId: id,
             taskType,
             timeTakenMs: end - start,
             returnValue,
-        } satisfies TaskResult),
+        } satisfies TaskReport),
     );
 }

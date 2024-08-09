@@ -28,12 +28,15 @@ export function getAllServers(ns: NS): Set<string> {
     return allServers;
 }
 
-// this is a pseudo-random uuid-generator stolen from the internet but it's good enough for this
 export function id(): string {
+    // this used to be a pseudo-random uuid generator but even that was too overkill
+
     let d = '';
     while (d.length < 32) d += Math.random().toString(16).slice(2);
-    const vr = ((parseInt(d.slice(16, 17), 16) & 0x3) | 0x8).toString(16);
-    return `${d.slice(0, 8)}-${d.slice(8, 12)}-4${d.slice(13, 16)}-${vr}${d.slice(17, 20)}-${d.slice(20, 32)}`;
+    // const vr = ((parseInt(d.slice(16, 17), 16) & 0x3) | 0x8).toString(16);
+    // return `${d.slice(0, 8)}-${d.slice(8, 12)}-4${d.slice(13, 16)}-${vr}${d.slice(17, 20)}-${d.slice(20, 32)}`;
+
+    return d.slice(0, 10);
 }
 
 // taken from https://en.wikipedia.org/wiki/Levenshtein_distance
