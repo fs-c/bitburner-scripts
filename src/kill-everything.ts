@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 import { getAllServers } from './utils';
 
 export async function main(ns: NS): Promise<void> {

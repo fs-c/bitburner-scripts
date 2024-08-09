@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 export function getAllServers(ns: NS): Set<string> {
     const allServers = new Set<string>();
     const queue = ['home'];
@@ -44,7 +46,7 @@ export function levenshteinDistance(a: string, b: string): number {
     // for all i and j, distances[i,j] will hold the levenshtein distance between
     // the first i characters of s and the first j characters of t
     const distances: number[][] = Array.from({ length: a.length + 1 }, () =>
-        Array.from({ length: b.length + 1 }, () => 0),
+        Array.from({ length: b.length + 1 }, () => 0)
     );
 
     // source prefixes can be transformed into empty string by dropping all characters
@@ -70,7 +72,7 @@ export function levenshteinDistance(a: string, b: string): number {
                 // @ts-ignore
                 distances[i][j - 1] + 1, // insertion
                 // @ts-ignore
-                distances[i - 1][j - 1] + substitutionCost, // substitution
+                distances[i - 1][j - 1] + substitutionCost // substitution
             );
         }
     }
