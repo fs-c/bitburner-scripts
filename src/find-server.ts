@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 function findAllChildToParentConnections(ns: NS, start: string): Map<string, string> {
     const parentChildConnections = new Map<string, string[]>();
     const queue: [string | null, string | null][] = [[null, start]];

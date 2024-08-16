@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 import { TaskType, isTaskReport } from './tasks/task.js';
 import { createLogger } from './logger.js';
 import { ProtoBatch } from './batches/proto-batch.js';

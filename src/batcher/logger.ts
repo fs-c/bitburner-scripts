@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 // todo: this implementation is stupid and doesn't fit the use case well
 
 interface Logger {

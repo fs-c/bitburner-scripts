@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 import { taskWrapper } from './task.js';
 
 export async function main(ns: NS): Promise<void> {

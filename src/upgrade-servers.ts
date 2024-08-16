@@ -1,4 +1,5 @@
-/** @param {NS} ns */
+import type { NS } from '@ns';
+
 export async function main(ns: NS): Promise<void> {
     const [command = 'check'] = ns.args as [string];
 
@@ -36,7 +37,9 @@ export async function main(ns: NS): Promise<void> {
         const totalDeleted = purchasedServers.length * currentPurchasedServerRam * costPerRamGB;
 
         ns.tprint(
-            `INFO this would cost ${ns.formatNumber(totalCost)}$ and delete ${ns.formatNumber(totalDeleted)}$ worth of servers`,
+            `INFO this would cost ${ns.formatNumber(totalCost)}$ and delete ${ns.formatNumber(
+                totalDeleted,
+            )}$ worth of servers`,
         );
     } else if (command === 'buy') {
         // delete all purchased servers

@@ -21,6 +21,22 @@
             "/*": ["*"],
             "@ns": ["../NetscriptDefinitions.d.ts"],
             "@react": ["lib/react.ts"]
-        }
+        },
+        "alwaysStrict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictBindCallApply": true,
+        "strictFunctionTypes": true,
+        "strictPropertyInitialization": true,
+        "useUnknownInCatchVariables": true,
+        "noUnusedLocals": true,
+        "allowUnusedLabels": false,
+        "allowUnreachableCode": false,
+        "noImplicitOverride": true,
+        "noUncheckedIndexedAccess": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noFallthroughCasesInSwitch": true,
+        "exactOptionalPropertyTypes": true,
+        "forceConsistentCasingInFileNames": true
     }
 }

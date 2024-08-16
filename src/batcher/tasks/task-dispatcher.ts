@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 import { getAllServers } from '../../utils.js';
 import { Task, TASK_SCRIPTS } from './task.js';
 import { createLogger } from '../logger.js';

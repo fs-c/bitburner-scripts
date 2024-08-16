@@ -1,4 +1,5 @@
-import { NetscriptPort } from '@/NetscriptDefinitions';
+import type { NS, NetscriptPort } from '@ns';
+
 import { TaskDispatcher } from '../tasks/task-dispatcher';
 import { isTaskReport, TaskReport } from '../tasks/task';
 import { ProtoBatch } from './proto-batch';
@@ -100,7 +101,10 @@ export class BatchManager {
         logger.debug(
             this.ns,
             `task ${message.taskId}/${message.taskType} in batch ${batchId} finished, ` +
-                `${openTasks - 1} tasks remaining (efficacy ${this.ns.formatPercent(message.returnValue / task.validReturnValue, 3)})`,
+                `${openTasks - 1} tasks remaining (efficacy ${this.ns.formatPercent(
+                    message.returnValue / task.validReturnValue,
+                    3,
+                )})`,
         );
 
         if (openTasks === 1) {

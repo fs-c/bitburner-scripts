@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 import { getAllServers } from '../utils.js';
 import { createLogger } from './logger.js';
 import { TaskDispatcher } from './tasks/task-dispatcher.js';
@@ -37,7 +39,7 @@ export async function main(ns: NS): Promise<void> {
                 ns,
                 target,
                 relativeMoneyToSteal,
-                spacerMs,
+                spacerMs
             );
             // const depth = hackProtoBatch.maxConcurrentBatches();
             const depth = 10;
@@ -62,7 +64,9 @@ export async function main(ns: NS): Promise<void> {
             if (!taskDispatcher.couldFit(allTasks)) {
                 logger.info(
                     ns,
-                    `could not fit in practice, skipping (took ${Date.now() - beforeExpensiveCheck} ms)`,
+                    `could not fit in practice, skipping (took ${
+                        Date.now() - beforeExpensiveCheck
+                    } ms)`
                 );
 
                 // it is very unlikely (but probably not impossible!) that we will be able to fit
@@ -72,7 +76,7 @@ export async function main(ns: NS): Promise<void> {
 
             logger.info(
                 ns,
-                `could fit in practice, continuing (took ${Date.now() - beforeExpensiveCheck} ms)`,
+                `could fit in practice, continuing (took ${Date.now() - beforeExpensiveCheck} ms)`
             );
 
             // we could fit this into ram, let's see how it performs
@@ -92,17 +96,19 @@ export async function main(ns: NS): Promise<void> {
     }
 
     const sortedServerInformation = [...serverInformation.entries()].sort(
-        ([serverA, infoA], [serverB, infoB]) => infoB.moneyPerSecond - infoA.moneyPerSecond,
+        ([serverA, infoA], [serverB, infoB]) => infoB.moneyPerSecond - infoA.moneyPerSecond
     );
 
     logger.info(
         ns,
-        `${'target'.padEnd(20)} ${'relativeMoneyToSteal'.padEnd(20)} ${'moneyPerSecond'.padEnd(20)}`,
+        `${'target'.padEnd(20)} ${'relativeMoneyToSteal'.padEnd(20)} ${'moneyPerSecond'.padEnd(20)}`
     );
     for (const [server, info] of sortedServerInformation) {
         logger.info(
             ns,
-            `${server.padEnd(20)} ${info.relativeMoneyToSteal.toFixed(2).padEnd(20)} ${info.moneyPerSecond.toFixed(2).padEnd(20)}`,
+            `${server.padEnd(20)} ${info.relativeMoneyToSteal
+                .toFixed(2)
+                .padEnd(20)} ${info.moneyPerSecond.toFixed(2).padEnd(20)}`
         );
     }
 }

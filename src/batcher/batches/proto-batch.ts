@@ -1,3 +1,5 @@
+import type { NS } from '@ns';
+
 import { Task, TASK_SCRIPTS, TaskType } from '../tasks/task.js';
 import { id } from '../../utils.js';
 import { Batch } from './batch.js';

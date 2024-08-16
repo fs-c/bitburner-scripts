@@ -1,4 +1,4 @@
-import { BasicHGWOptions } from '@/NetscriptDefinitions';
+import type { NS, BasicHGWOptions } from '@ns';
 
 export enum TaskType {
     Hack = 'Hack',
