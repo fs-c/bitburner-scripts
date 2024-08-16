@@ -4,11 +4,16 @@
         {
             "type": "chrome",
             "request": "attach",
-            "name": "Attach to BitBurner",
+            "name": "Attach to BitBurner (Steam)",
+            "port": 9222
+        },
+        {
+            "type": "chrome",
+            "request": "attach",
+            "name": "Attach to BitBurner (Web)",
             "port": 9222,
-            "sourceMapPathOverrides": {
-                "bitburner-scripts/*": "${workspaceFolder}/src/*"
-            }
+            "urlFilter": "https://bitburner-official.github.io/*",
+            "webRoot": "${workspaceFolder}"
         }
     ]
 }

@@ -19,8 +19,10 @@ const createContext = async () =>
         platform: 'browser',
         logLevel: 'debug',
         sourcemap: 'both',
-        // sourceRoot: 'bitburner-scripts/',
-        sourcesContent: true,
+        logLevel: 'debug',
+        sourcemap: 'inline',
+        sourceRoot: '/build/server',
+        sourcesContent: false,
     });
 
 const ctx = await createContext();
