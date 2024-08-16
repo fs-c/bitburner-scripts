@@ -120,7 +120,7 @@ export class ProtoBatch {
         logger.info(ns, `created HWGW proto-batch for ${target} with ${tasks.length} tasks`);
         logger.debug(ns, JSON.stringify(tasks, null, 4));
 
-        return new ProtoBatch(ns, target, tasks, spacerMs, { money: moneyToSteal });
+        return new ProtoBatch(target, tasks, spacerMs, { money: moneyToSteal });
     }
 
     public static createGW(
@@ -179,11 +179,10 @@ export class ProtoBatch {
         logger.info(ns, `created GW proto-batch for ${target} with ${tasks.length} tasks`);
         logger.debug(ns, JSON.stringify(tasks, null, 4));
 
-        return new ProtoBatch(ns, target, tasks, spacerMs, { money: 0 });
+        return new ProtoBatch(target, tasks, spacerMs, { money: 0 });
     }
 
     private constructor(
-        private readonly ns: NS,
         private readonly target: string,
         private readonly tasks: Task[],
         private readonly delayMs: number,

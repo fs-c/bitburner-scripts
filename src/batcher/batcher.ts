@@ -10,7 +10,6 @@ import { TaskDispatcher } from './tasks/task-dispatcher.js';
 const logger = createLogger('batcher');
 
 function isPrepped(ns: NS, server: string): boolean {
-    const a = 1;
     return (
         ns.getServerSecurityLevel(server) <= ns.getServerMinSecurityLevel(server) &&
         ns.getServerMoneyAvailable(server) >= ns.getServerMaxMoney(server)
@@ -66,12 +65,12 @@ export async function main(ns: NS): Promise<void> {
                 `batch ${batchId} finished, server status: ` +
                     `money ${ns.formatPercent(
                         ns.getServerMoneyAvailable(target) / ns.getServerMaxMoney(target),
-                        3
+                        3,
                     )}, ` +
                     `security: ${ns.formatPercent(
                         ns.getServerMinSecurityLevel(target) / ns.getServerSecurityLevel(target),
-                        3
-                    )}`
+                        3,
+                    )}`,
             );
         }
     }
@@ -126,9 +125,9 @@ async function prepServer(ns: NS, target: string): Promise<void> {
                 `task ${message.taskId}/${message.taskType} finished ` +
                     `with ${message.returnValue} (${ns.formatPercent(
                         message.returnValue / task.validReturnValue,
-                        3
+                        3,
                     )}) ` +
-                    `in ${ns.formatNumber(message.timeTakenMs)}ms`
+                    `in ${ns.formatNumber(message.timeTakenMs)}ms`,
             );
 
             if (task.taskType === TaskType.Weaken) {

@@ -1,4 +1,5 @@
 import type { NS, BasicHGWOptions } from '@ns';
+import { createLogger } from '../logger';
 
 export enum TaskType {
     Hack = 'Hack',
@@ -38,6 +39,8 @@ export const TASK_SCRIPTS: Record<TaskType, { path: string; cost: number }> = {
     [TaskType.Weaken]: { path: '/batcher/tasks/weaken.js', cost: 1.75 },
 };
 
+const logger = createLogger('task');
+
 // this is a wrapper to deduplicate the task (hack/grow/weaken) script logic
 // since we expect those to have exact ram costs, this wrapper MUST NOT have a ram cost
 export async function taskWrapper(
@@ -52,11 +55,15 @@ export async function taskWrapper(
         number,
     ];
 
+    logger.debug(ns, `starting task ${id}/${taskType} on ${target} with ${delayMs}ms delay`);
+
     const opts = { additionalMsec: delayMs };
 
     const start = Date.now();
     const returnValue = await hgwFunction(target, opts);
     const end = Date.now();
+
+    logger.debug(ns, `task ${id}/${taskType} finished with ${returnValue} in ${end - start}ms`);
 
     ns.writePort(
         port,
